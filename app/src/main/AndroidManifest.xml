@@ -1,13 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     package="com.yth520web.mapstep">
-<!--配置百度地图所需的权限-->
-    <!--xmlns:tools="http://schemas.android.com/tools"
-        tools:ignore="ProtectedPermissions"
-    解决MOUNT_UNMOUNT_FILESYSTEMS-->
-    <!--只要手机可以接受到基站信息就可以定位，网络定位-->
+<!--配置百度地图所需的权限,百度地图需要的几个权限-->
+    <!--网络定位-->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <!--高精度定位，，GPS定位-->
+    <!--GPS定位-->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
@@ -29,15 +26,20 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme" >
-
+        <!--android:theme="@style/AppTheme"指定了系统的主题，在res/value/style.xml中可找到这个主题-->
        <!-- 配置百度地图API所需的配置，此处填入我申请的API KEY-->
         <meta-data
             android:name="com.baidu.lbsapi.API_KEY"
             android:value="3r6iGRZboaNNUGKnXQOzhMicC3VN2jfs"/>
         <!--配置默认的activity-->
-        <activity android:name=".MainActivity">
+        <activity android:name=".SplashActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <activity android:name=".MainActivity">
+            <intent-filter>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
