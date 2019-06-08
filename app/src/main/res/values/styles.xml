@@ -6,5 +6,12 @@
         <!-- Customize your theme here. -->
         <item name="android:windowNoTitle">true</item>
     </style>
-
+    <style name="MyCustomTabLayout" parent="Widget.Design.TabLayout">
+        <item name="tabIndicatorColor">?attr/colorPrimary</item>
+        <item name="tabIndicatorHeight">2dp</item>
+        <item name="tabPaddingStart">12dp</item>
+        <item name="tabPaddingEnd">12dp</item>
+        <item name="tabBackground">?attr/selectableItemBackground</item>
+        <item name="tabSelectedTextColor">?android:textColorPrimary</item>
+    </style>
 </resources>
