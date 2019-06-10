@@ -9,14 +9,49 @@
     <TextView
         android:id="@+id/mTextView"
         android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:layout_weight="1"/>
- <com.baidu.mapapi.map.MapView
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:text="获得坐标中"
+        android:background="#ff0"
+        />
+    <!--简易的计时器,参考https://www.cnblogs.com/liushilin/p/5802954.html-->
+    <Chronometer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:format="00:00:00"
+        android:gravity="center"
+        android:id="@+id/timer"/>
+    <TextView
+        android:id="@+id/distance"
+        android:gravity="center"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+  <com.baidu.mapapi.map.MapView
         android:id="@+id/bmapView"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-      android:layout_weight="3">
+      android:layout_weight="4"
+      android:clickable="true">
     </com.baidu.mapapi.map.MapView>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:orientation="horizontal"
+        android:layout_weight="0.8">
+        <!--放入两个按钮，用于开始和结束绘制-->
+        <Button
+            android:id="@+id/map_start"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="开始"
+            android:layout_weight="1" />
+        <Button
+            android:id="@+id/map_stop"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="停止"
+            android:layout_weight="1" />
+    </LinearLayout>
     <!--<android.support.design.widget.TabLayout
         android:id="@+id/sliding_tabs"
         android:layout_width="match_parent"
