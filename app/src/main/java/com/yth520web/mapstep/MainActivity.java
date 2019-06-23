@@ -1,8 +1,11 @@
 package com.yth520web.mapstep;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.app.VoiceInteractor;
 import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -29,11 +32,14 @@ import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.AppCompatRadioButton;
 import android.text.Layout;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Chronometer;
+import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -63,8 +69,14 @@ import com.baidu.mapapi.model.inner.GeoPoint;
 import com.baidu.mapapi.utils.CoordinateConverter;
 import com.baidu.mapapi.utils.DistanceUtil;
 
+import org.litepal.LitePal;
+import org.litepal.crud.DataSupport;
+
+import java.math.RoundingMode;
 import java.text.DecimalFormat;
+import java.text.NumberFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -86,11 +98,20 @@ public class MainActivity extends AppCompatActivity {
     double latitude;
     //获取经度信息
     double longitude;
-    List<LatLng> points = new ArrayList<LatLng>();;//用于存放坐标点，然后绘制折线图
+    List<LatLng> points = new ArrayList<LatLng>();//用于存放坐标点，然后绘制折线图
     Button button_start,button_stop;//两个按钮，点击时开始和暂停绘图，stop长按时候停止绘图
     Boolean run_isStart =false,run_isStop=false;//判断是否开始和停止,检测用户是否暂停
-    Boolean showMyLocation=true;//用于显示是否展示我的位置
-
+    Boolean showMyLocation=true;//用于用一个小光标是否展示我的位置，跑步后不再实时显示我当前位置
+    TextView myLocation;//在文本框中显示我目前的位置,如“西南财经大学晨曦体育馆”
+    Boolean showDia=true;//用于提示用户，如果运动时候未开启GPS则显示一个提示框
+    TextView showMrter;//米和公里之间的切换
+    TextView avg_v;//显示平均速度
+    TextView text_avg_v;//显示平均速度的文本框
+    TextView my_data_year;//年月日，用于记录
+    TextView my_data_time;//时分，用于记录
+    float userHeight=0;//用户身高体重，用于计算消耗的卡路里
+    float userWeight=0;
+    TextView avg_k;//显示运动的卡路里
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -100,14 +121,62 @@ public class MainActivity extends AppCompatActivity {
         Log.i("原本坐标类型：",SDKInitializer.getCoordType()+"");
         SDKInitializer.setCoordType(CoordType.GCJ02);//默认为BD09LL坐标
         setContentView(R.layout.main_layout);
+        //开启百度地域
         mapView = (MapView)findViewById(R.id.bmapView);
-        mTxtView = (TextView)findViewById(R.id.mTextView);
-        //在MyLocationListener实现开始，暂停和结束的功能
+        //开启LitePal数据库,存放用户身高体重
+        LitePal.getDatabase();
+        //查询数据库中是否有用户身高体重，如果没有，跳转到添加页面，如果有则取出
+        List<Db> dbs = DataSupport.findAll(Db.class);
+        for (Db b:dbs){
+            try{
+                userHeight = b.getUserHeight();
+                userWeight=b.getUserWeight();
+
+            }catch (Exception e){
+                //如果没有数据，跳转到添加身高体重的页面
+                e.printStackTrace();
+                final AlertDialog.Builder normalDialog =
+                        new AlertDialog.Builder(MainActivity.this);
+                normalDialog.setIcon(R.drawable.dragon);
+                normalDialog.setMessage("添加基本信息后可以提供更好的服务"+"\n"+"是否现在就添加信息？");
+                normalDialog.setPositiveButton("确定",
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                Intent intent = new Intent(MainActivity.this,AddUserInfor.class);
+                                startActivity(intent);
+                            }
+                        });
+                normalDialog.setNegativeButton("取消",null);
+                // 显示
+                normalDialog.show();
+            }
+        }
+        //mTxtView = (TextView)findViewById(R.id.mTextView);
+        //开始和暂停按钮
         button_start = (Button)findViewById(R.id.map_start);
         button_stop = (Button)findViewById(R.id.map_stop);
         timer = (Chronometer) findViewById(R.id.timer);//计时器
         showdistance = (TextView) findViewById(R.id.distance);//API自带的计算距离方法DistanceUtil
+        myLocation = (TextView)findViewById(R.id.myLocation);
+        //展示平均速度，运动距离，运动速度
+        showMrter=(TextView)findViewById(R.id.meter);
+        avg_v=(TextView)findViewById(R.id.avg_v);
+        text_avg_v=(TextView)findViewById(R.id.text_avg_v);
+        //设置年月日时分
+        my_data_year=(TextView)findViewById(R.id.my_data_year);
+        my_data_time=(TextView)findViewById(R.id.my_data_time);
         initLocationOption();//启动地图，获取位置信息
+        avg_k=(TextView)findViewById(R.id.avg_k);//消耗的卡路里
+        //添加用户信息
+        Button user =(Button)findViewById(R.id.user);
+        user.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent add_user = new Intent(MainActivity.this,AddUserInfor.class);
+                startActivity(add_user);
+            }
+        });
         button_start.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -129,23 +198,70 @@ public class MainActivity extends AppCompatActivity {
                     timer.setFormat("0"+String.valueOf(hour)+":%s");
                     timer.start();
 
+                    //获取时分秒，年月日
+                    Calendar c = Calendar.getInstance();//
+                    int mYear = c.get(Calendar.YEAR); // 获取当前年份
+                    int mMonth = c.get(Calendar.MONTH) + 1;// 获取当前月份
+                    int mDay = c.get(Calendar.DAY_OF_MONTH);// 获取当日期
+                    int mWay = c.get(Calendar.DAY_OF_WEEK);// 获取当前日期的星期
+                    int mHour = c.get(Calendar.HOUR_OF_DAY);//时
+                    int mMinute = c.get(Calendar.MINUTE);//分
+                    my_data_year.setText(mYear+"/"+mMonth+"/"+mDay);
+                    my_data_time.setText(mHour+":"+mMinute);
+                    try{//开始后再次尝试获取用户身高体重信息
+                        List<Db> db = DataSupport.findAll(Db.class);
+                        for (Db b:db){
+                            userHeight = b.getUserHeight();
+                            userWeight=b.getUserWeight();
+                            Log.i("用户基本信息：",userHeight+"》》"+userWeight);
+                        }
+                    }catch (Exception e){ }
+                    avg_k.setText("计算中");
                 }
-
             }
         });
         button_stop.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 /**点击停止按钮时，需要实现：
-                 * （1）停止获得位置信息和轨迹的绘制
-                 * （2）在终点打上一个Marker
-                 * （3）停止计时器
+                 * （1）在终点打上一个Marker
+                 * （2）停止获得位置信息和轨迹的绘制
+                 * （3）交给MyLocationListener实现，向用户展示自己的运动距离，运动轨迹，最高运动速度
+                 * （4）停止计时器
+                 * （5）计算卡路里
                  */
+                //（1）在终点打上一个Marker
+                LatLng ll =new LatLng(latitude,longitude);
+                BitmapDescriptor bitmap = BitmapDescriptorFactory
+                        .fromResource(R.drawable.point_stop_change);
+                //构建MarkerOption，用于在地图上添加Marker
+                OverlayOptions option = new MarkerOptions()
+                        .position(ll)//停止的位置位置
+                        .icon(bitmap);
+                baiduMap.addOverlay(option);
+               //（2）停止获得位置信息和轨迹的绘制
                 run_isStop=true;
-                initLocationOption();//执行initLocationOption中的stop方法
-                //locationClient.stop();
-                //停止计时器
+                //mapView.onPause();
+                locationClient.stop();
+                baiduMap.setMyLocationEnabled(false);
+                //(3)停止计时器
                 timer.stop();
+                //显示平均速度
+                Double avg = distance/((int) (SystemClock.elapsedRealtime() - timer.getBase())/1000);
+                Log.i("timer的base",(int) (SystemClock.elapsedRealtime() - timer.getBase())/1000+"");
+                NumberFormat nf = NumberFormat.getNumberInstance();
+                // 保留两位小数
+                nf.setMaximumFractionDigits(2);
+                avg_v.setText(nf.format(avg));
+                text_avg_v.setText("平均速度");
+                //计算卡路里，K=体重（kg）*运动时间(小时)*指数K
+                //指数K=30/速度（分钟/400米）
+                double x=avg;
+                float f=(float)x;
+                //直接转化会报错
+                float user_k = (userWeight * ((int) (SystemClock.elapsedRealtime() - timer.getBase()) / 1000 / 60) * 30)/f;
+                avg_k.setText(user_k+"");
+                Toast.makeText(MainActivity.this,"运动完成 消耗"+user_k+"千卡路里",Toast.LENGTH_LONG).show();
             }
         });
 
@@ -163,8 +279,6 @@ public class MainActivity extends AppCompatActivity {
             ActivityCompat.requestPermissions(MainActivity.this, permission, 1);
         }
     }
-
-
     /**
      * 初始化定位参数配置
      */
@@ -178,30 +292,14 @@ public class MainActivity extends AppCompatActivity {
         locationClient.registerLocationListener(myLocationListener);
 //可选，默认高精度，设置定位模式，高精度，低功耗，仅设备
         locationOption.setLocationMode(LocationClientOption.LocationMode.Hight_Accuracy);
-//可选，默认gcj02，设置返回的定位结果坐标系，如果配合百度地图使用，建议设置为bd09ll;
-        //locationOption.setCoorType("gcj02");
 //可选，默认0，即仅定位一次，设置发起连续定位请求的间隔需要大于等于1000ms才是有效的
-        locationOption.setScanSpan(2000);
-//可选，设置是否需要地址信息，默认不需要
-        locationOption.setIsNeedAddress(true);
-//可选，设置是否需要地址描述
-        //locationOption.setIsNeedLocationDescribe(true);
-//可选，设置是否需要设备方向结果
-        locationOption.setNeedDeviceDirect(false);
+        locationOption.setScanSpan(3000);
 //可选，默认false，设置是否当gps有效时按照1S1次频率输出GPS结果
-        locationOption.setLocationNotify(true);
+       //locationOption.setLocationNotify(false);
 //可选，默认true，定位SDK内部是一个SERVICE，并放到了独立进程，设置是否在stop的时候杀死这个进程，默认不杀死
-        locationOption.setIgnoreKillProcess(true);
-//可选，默认false，设置是否需要位置语义化结果，可以在BDLocation.getLocationDescribe里得到，结果类似于“在北京天安门附近”
-        locationOption.setIsNeedLocationDescribe(true);
-//可选，默认false，设置是否需要POI结果，可以在BDLocation.getPoiList里得到
-        locationOption.setIsNeedLocationPoiList(true);
-//可选，默认false，设置是否收集CRASH信息，默认收集
-        locationOption.SetIgnoreCacheException(false);
+        locationOption.setIgnoreKillProcess(false);
 //可选，默认false，设置是否开启Gps定位
         locationOption.setOpenGps(true);
-//可选，默认false，设置定位时是否需要海拔信息，默认不需要，除基础定位版本都可用
-        locationOption.setIsNeedAltitude(false);
 //设置打开自动回调位置模式，该开关打开后，期间只要定位SDK检测到位置变化就会主动回调给开发者，该模式下开发者无需再关心定位间隔是多少，定位SDK本身发现位置变化就会及时回调给开发者
         locationOption.setOpenAutoNotifyMode();
 //设置打开自动回调位置模式，该开关打开后，期间只要定位SDK检测到位置变化就会主动回调给开发者
@@ -216,64 +314,87 @@ public class MainActivity extends AppCompatActivity {
      */
     public class MyLocationListener extends BDAbstractLocationListener{
         @Override
-        public void onReceiveLocation(BDLocation location){
+        public void onReceiveLocation(BDLocation location) {
             //当定位方式为网络定位或gps定位，则启动navigateTo将位置移动到我当前位置
-            if(location.getLocType()==BDLocation.TypeGpsLocation
-                    ||location.getLocType()==BDLocation.TypeNetWorkLocation){
-                navigateTo(location);
-                Log.i("启动navigateTo：",true+"");
-                //return;
-            }
-            //开始运动，启动相关功能
-            if (run_isStart==true){
-                start_run(location);//绘制轨迹
-                start_marker(location);//绘制一个起点
-            }
-           //暂停运动，启动相关功能
-            /**
-             * 停止绘制轨迹
-             * 开始绘制我所在位置的Marker点
-             */
-            if(run_isStart==true) {
-                locationClient.stop();
-            }
-            //继续运动，启动相关功能
-            if(run_isStart==true) {
-                locationClient.restart();
-            }
-            //停止运动，启动相关功能
-            if (run_isStop==true){
-                stop_run(location);
-                Log.i("停止地图","true");
-            }
-            //获取纬度信息
-            latitude = location.getLatitude();
-            //获取经度信息
-            longitude = location.getLongitude();
-            //获取定位精度，默认值为0.0f
-            float radius = location.getRadius();
-            //获取经纬度坐标类型，以LocationClientOption中设置过的坐标类型为准
-            String coorType = location.getCoorType();
-            String type=null;
-            if(location.getLocType()==BDLocation.TypeGpsLocation){
-                type = "GPS";
-            }
-            if(location.getLocType()==BDLocation.TypeNetWorkLocation){
-                type = "网络";
-            }
-            //获取定位类型、定位错误返回码，具体信息可参照类参考中BDLocation类中的说明
-            int errorCode = location.getLocType();
-            mTxtView.setText(latitude+"\n"+longitude+"\n"+radius+"\n"+type+"\n"+errorCode+"\n");
-        }
+            if(run_isStop == false){
+                if (location.getLocType() == BDLocation.TypeGpsLocation
+                        || location.getLocType() == BDLocation.TypeNetWorkLocation) {
+                    navigateTo(location);
+                    Log.i("启动navigateTo：", true + "");
+                    if (showDia==true&&location.getLocType() == BDLocation.TypeNetWorkLocation){
+                        final AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                        builder.setMessage("在室内或未开启GPS会造成定位误差，该软件更适合户外记录"+"\n"+"请开启GPS");
+                        builder.setPositiveButton("确定",null);
+                        builder.show();
+                        showDia=false;//仅提醒一次
+                    }
+                }
+                //开始运动，启动相关功能
+                if (run_isStart == true) {
+                    start_run(location);//绘制轨迹
+                    start_marker(location);//绘制一个起点
+                }
+                //停止运动，启动相关功能
+                //获取纬度信息
+                latitude = location.getLatitude();
+                //获取经度信息
+                longitude = location.getLongitude();
 
+                //显示我的位置，如“西南财经大学晨曦体育馆”
+
+                 final String strLocation=location.getAddrStr();
+                 final float mySpeed = location.getSpeed();
+                 new Thread(new Runnable() {
+                     @Override
+                     public void run() {
+                         for (int i=0;i<list_distance.size();i++){
+                             distance =(Double)list_distance.get(i)+distance;
+                         }
+                     }
+                   }).start();
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Log.i("我当前位置：",strLocation+"速度："+mySpeed);
+                        myLocation.setText(strLocation);
+                        //设置速度.mySpeed格式为公里/小时，转化为m/s
+                        avg_v.setText(mySpeed*0.36+"");
+                        //判断行走的距离，如果<1000米，那么显示格式为“632米”，如果>=1000米，显示格式为"1.32公里"
+                        if(distance<1000) {
+                            //进行四舍五入，将double转为int
+                            //进行四舍五入操作：
+                            //Integer.parseInt(new java.text.DecimalFormat("0").format(x))
+                            int trans_distance = Integer.parseInt(new java.text.DecimalFormat("0").format(distance));
+                            showdistance.setText(trans_distance + "");
+                            showMrter.setText("米");
+                        }else {
+                            //显示格式为“1.32公里”,需要保留一位小数
+                            double d = distance/1000;
+                            NumberFormat nf = NumberFormat.getNumberInstance();
+                            // 保留两位小数
+                            nf.setMaximumFractionDigits(2);
+                            // 如果不需要四舍五入，可以使用RoundingMode.DOWN
+                            //nf.setRoundingMode(RoundingMode.UP);
+                            showdistance.setText(nf.format(d) + "");
+                            showMrter.setText("公里");
+                        }
+                    }
+                });
+
+            }
+        }
     }
 //将地图移动到我当前位置
 private void navigateTo (BDLocation bdlocation){
         //获取目前所在的位置，由于SpanScan方法，该方法2每秒获取一次位置
         LatLng ll =new LatLng(bdlocation.getLatitude(),bdlocation.getLongitude());
-        MapStatusUpdate update = MapStatusUpdateFactory.newLatLng(ll);
+        //MapStatusUpdate update = MapStatusUpdateFactory.newLatLng(ll);
+        //尝试将我的位置显示移动到屏幕偏上方而非中间
+        LatLng ll_text =new LatLng(bdlocation.getLatitude()-0.0013,bdlocation.getLongitude());
+        MapStatusUpdate update = MapStatusUpdateFactory.newLatLng(ll_text);
+
         baiduMap.animateMapStatus(update);
-        update = MapStatusUpdateFactory.zoomTo(18f);
+        update = MapStatusUpdateFactory.zoomTo(19f);
         baiduMap.animateMapStatus(update);
 
          /**
@@ -316,7 +437,7 @@ private void navigateTo (BDLocation bdlocation){
         }
         //利用API自带的DistanceUtil计算距离
         distance = DistanceUtil.getDistance(points.get(count), points.get(count+1));
-        showdistance.setText(distance+"");
+        //showdistance.setText(distance+"");
         //用一个数组存放行走的距离
         list_distance.add(distance);
         //Log.i("尝试获取LatLng数组元素》》》",points.get(count)+",count="+count);
@@ -344,30 +465,7 @@ private void navigateTo (BDLocation bdlocation){
             baiduMap.addOverlay(option);
 
     }
-    //点击停止，绘制终点Marker的方法
-    public void stop_run(BDLocation bdlocation){
-        LatLng ll = new LatLng(bdlocation.getLatitude(), bdlocation.getLongitude());
-        BitmapDescriptor bitmap = BitmapDescriptorFactory
-                .fromResource(R.drawable.point_stop_change);
-        //构建MarkerOption，用于在地图上添加Marker
-        OverlayOptions option = new MarkerOptions()
-                .position(ll)//停止的位置位置
-                .icon(bitmap);
-        baiduMap.addOverlay(option);
-        //mapView.onDestroy();
-        //baiduMap.setMyLocationEnabled(false);
 
-        //显示行走过的总距离
-        for(int i = 0;i<list_distance.size();i++){
-            Log.i("list_distance》》》》",list_distance.get(i)+"");
-            distance  = (Double)list_distance.get(i)+distance;
-
-        }
-        showdistance.setText("总距离："+distance);
-        locationClient.stop();
-        Log.i("start_marker：","成功绘制最后一个点并停止locationClient");
-
-    }
 
 
     //处理申请权限的方法，在申请时候如果不同意权限就finish()程序
@@ -398,12 +496,12 @@ private void navigateTo (BDLocation bdlocation){
     @Override
     protected void onResume() {
         super.onResume();
-        mapView.onResume();
+        //mapView.onResume();
     }
     @Override
     protected void onPause() {
         super.onPause();
-        mapView.onPause();
+        //mapView.onPause();
     }
     @Override
     protected void onDestroy() {

@@ -2,6 +2,6 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/hashiqi_splash">
+    android:background="@drawable/run_bg">
     <!--做微信启动前的欢迎页面，单纯一个全屏的图片-->
 </RelativeLayout>
